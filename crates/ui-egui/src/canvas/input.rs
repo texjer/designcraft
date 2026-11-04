@@ -164,7 +164,12 @@ fn item_at(app: &DesignApp, p: Point, zoom: f64) -> Option<(designcraft_doc::Ite
     let tol = 4.0 / zoom.max(1e-6);
     let id = match sr {
         SpreadRef::Doc(si) => st.doc.hit_item(si, sp, tol)?,
-        _ => st.doc.spread(sr)?.items.iter().rev().find(|it| !it.locked && designcraft_doc::edit_hit(it, sp, tol))?.id,
+        // A parent spread being edited: skips what is hidden or locked, or on a hidden or locked
+        // layer, as `Document::hit_item` does on a document spread.
+        _ => {
+            let shown = |it: &designcraft_doc::Item| !it.locked && !it.hidden && st.doc.layer(it.layer).is_none_or(|l| l.visible && !l.locked);
+            st.doc.spread(sr)?.items.iter().rev().find(|it| shown(it) && designcraft_doc::edit_hit(it, sp, tol))?.id
+        }
     };
     Some((id, sp))
 }

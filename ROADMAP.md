@@ -388,6 +388,7 @@ list) · [roadmap.md](docs/roadmap.md) (milestones, plan) · [parity-checklist.m
 
 ## Progress log
 
+- **2026-11-04** · A graphic dropped while parents are edited no longer replaces a frame on a hidden or locked layer, and `file.place` refuses a `frame` whose layer is locked as it refuses a locked frame; video or sound placed into a selected frame holding a nested image replaces it, as a graphic does (#2303). No readiness percentage change.
 - **2026-11-02** · EPUB Export Options names a cover image file (PNG or JPEG, typed or chosen with Choose…) for the reflowable export; left empty, the first page stays the cover (#1934). No readiness percentage change.
 - **2026-11-02** · The Pen shows the segment a dragged smooth point shapes while it is dragged, and its rubber band curves out of a smooth point's direction line (#1438, first item). No readiness percentage change.
 - **2026-11-02** · A Custom text variable defined with a number (a typed `2026` reaches the command as one) shows its digits instead of nothing (#2093, first item). No readiness percentage change.

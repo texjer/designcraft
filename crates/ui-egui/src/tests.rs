@@ -943,6 +943,36 @@ fn a_locked_frame_is_not_a_drop_target() {
     assert_eq!(d.spreads[0].items.len(), 2, "the graphic became a new object");
 }
 
+/// While parents are edited, a frame on a parent spread whose layer is locked or hidden is no
+/// drop target, as on a document spread: the drop doesn't replace what it holds.
+#[test]
+fn a_frame_on_a_locked_or_hidden_parent_layer_is_not_a_drop_target() {
+    let mut app = DesignApp::new(Session::new(), Services::default());
+    app.run("file.new", json!({})).unwrap();
+    let parent = json!({"spread": {"kind": "parent", "index": 0}, "rect": [36, 36, 136, 136]});
+    let frame = app.run("frame.create", parent).unwrap()["id"].as_u64().unwrap();
+    let id = designcraft_doc::ItemId(frame);
+    let layer = app.session.doc().unwrap().doc.item(id).unwrap().layer;
+    app.run("layout.parents.edit", json!({"on": true})).unwrap();
+    app.canvas_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0)));
+    let layout = designcraft_tools::CanvasLayout::new(&app.session.active().unwrap().doc, true);
+    let slot = layout.slot(designcraft_doc::SpreadRef::Parent(0)).unwrap();
+    // Scroll the parent spread into view.
+    let corner = slot.to_canvas(designcraft_geom::Point::new(0.0, 0.0));
+    app.view_mut().unwrap().origin = designcraft_geom::Point::new(corner.x - 50.0, corner.y - 50.0);
+    let (view, rect) = (app.view().unwrap(), app.canvas_rect.unwrap());
+    let inside = canvas::Xf::new(rect, view).to_screen(slot.to_canvas(designcraft_geom::Point::new(80.0, 80.0)));
+    assert!(rect.contains(inside), "the parent frame is in view");
+    assert_eq!(canvas::drop_frame(&app, Some(inside)), Some(id), "an unlocked parent frame takes the drop");
+    app.run("layer.set", json!({"id": layer.0, "locked": true})).unwrap();
+    assert!(canvas::drop_frame(&app, Some(inside)).is_none(), "a frame on a locked layer is skipped");
+    app.run("layer.set", json!({"id": layer.0, "locked": false, "visible": false})).unwrap();
+    assert!(canvas::drop_frame(&app, Some(inside)).is_none(), "a frame on a hidden layer is skipped");
+    app.run("layer.set", json!({"id": layer.0, "visible": true})).unwrap();
+    app.run("object.lock", json!({"ids": [frame]})).unwrap();
+    assert!(canvas::drop_frame(&app, Some(inside)).is_none(), "a locked frame is skipped");
+}
+
 #[test]
 fn only_the_first_graphic_of_a_drop_fills_the_frame() {
     let (mut app, frame, inside, _) = app_with_drop_frame();

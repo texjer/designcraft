@@ -25,11 +25,13 @@ pub(super) fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
         s.ui_requests.push(crate::UiRequest::Pick { purpose: "place".into(), params: json!({}) });
         return ok();
     };
-    // A frame named outright is not replaced while it is locked (the selected frame is the user's own choice).
-    if let Some(fid) = crate::cmd::id_param(p, "frame")
-        && s.doc()?.doc.item(fid).is_some_and(|it| it.locked)
-    {
-        return Err(bad("file.place", "the frame is locked"));
+    // A frame named outright is not replaced while it or its layer is locked (the selected frame
+    // is the user's own choice).
+    if let Some(fid) = crate::cmd::id_param(p, "frame") {
+        let d = &s.doc()?.doc;
+        if d.item(fid).is_some_and(|it| it.locked || d.layer(it.layer).is_some_and(|l| l.locked)) {
+            return Err(bad("file.place", "the frame or its layer is locked"));
+        }
     }
     // A page of another layout (IDML or DesignCraft): its objects, as one group.
     let lname = name.to_lowercase();
@@ -445,6 +447,25 @@ pub(super) mod image_place_tests {
         let document = &session.doc().unwrap().doc;
         assert!(matches!(document.item(ItemId(frame)).unwrap().content, Content::Unassigned), "the locked frame stays empty");
         session.execute("object.unlockAll", &json!({})).unwrap();
+        session.execute("file.place", &json!({"path": image.path(), "frame": frame})).unwrap();
+        assert!(matches!(session.doc().unwrap().doc.item(ItemId(frame)).unwrap().content, Content::Graphic(_)));
+    }
+
+    /// A frame named outright on a locked layer is left alone, as a locked frame is, also on a
+    /// parent spread.
+    #[test]
+    fn a_frame_named_outright_on_a_locked_layer_is_not_replaced() {
+        let image = image_file_with_color(30).unwrap();
+        let mut session = Session::new();
+        session.execute("file.new", &json!({})).unwrap();
+        let rect = json!({"spread": {"kind": "parent", "index": 0}, "rect": [36, 36, 136, 136]});
+        let frame = session.execute("frame.create", &rect).unwrap()["id"].as_u64().unwrap();
+        let layer = session.doc().unwrap().doc.item(ItemId(frame)).unwrap().layer;
+        session.execute("layer.set", &json!({"id": layer.0, "locked": true})).unwrap();
+        assert!(session.execute("file.place", &json!({"path": image.path(), "frame": frame})).is_err());
+        let document = &session.doc().unwrap().doc;
+        assert!(matches!(document.item(ItemId(frame)).unwrap().content, Content::Unassigned), "the frame stays empty");
+        session.execute("layer.set", &json!({"id": layer.0, "locked": false})).unwrap();
         session.execute("file.place", &json!({"path": image.path(), "frame": frame})).unwrap();
         assert!(matches!(session.doc().unwrap().doc.item(ItemId(frame)).unwrap().content, Content::Graphic(_)));
     }

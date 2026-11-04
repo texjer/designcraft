@@ -18,7 +18,7 @@ pub(crate) fn place_media(s: &mut Session, p: &Value, name: String, mime: &str, 
     );
     let target = super::id_param(p, "frame").or_else(|| {
         let st = s.active()?;
-        st.selection.items.iter().copied().find(|i| st.doc.item(*i).is_some_and(|it| matches!(it.content, Content::Unassigned | Content::Graphic(_))))
+        st.selection.items.iter().copied().find(|i| st.doc.item(*i).is_some_and(Item::takes_graphic))
     });
     let spread = super::spread_param(p, "file.place")?;
     let lid = s.doc()?.active_layer;
@@ -215,6 +215,41 @@ mod tests {
         assert!(read("OEBPS/content.opf").contains("video/mp4"), "the video is in the package");
         let x = read("OEBPS/content.xhtml");
         assert!(x.contains("<video src=") && x.contains("loop=") && x.contains("poster="), "{x}");
+    }
+
+    /// Video placed with a frame selected that holds an image pasted into it (how a document
+    /// from InDesign keeps a photo) replaces the image, as a placed graphic does.
+    #[test]
+    fn media_placed_into_a_frame_with_a_nested_image_replaces_it() {
+        use designcraft_doc::{Content, Item, ItemId, Shape, SpreadRef};
+        use designcraft_geom::{Affine, Rect, shapes};
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let png = designcraft_render::Rendered { width: 4, height: 4, pixels: vec![200; 64] }.to_png();
+        let first = s.execute("file.place", &json!({"base64": super::super::file::base64_encode(&png), "name": "old.png", "x": 0, "y": 0})).unwrap();
+        let old = ItemId(first["id"].as_u64().unwrap());
+        let frame = s
+            .edit(|d, _| {
+                let image = (*d.item(old).unwrap()).clone();
+                d.remove_item(old)?;
+                let id = ItemId(d.alloc());
+                let mut frame = Item::new(id, image.layer, Shape::Rectangle, shapes::rectangle(Rect::new(0.0, 0.0, 60.0, 90.0)));
+                frame.xf = Affine::translate((100.0, 100.0));
+                frame.content = Content::Group { items: vec![std::sync::Arc::new(image)] };
+                d.insert_item(SpreadRef::Doc(0), frame, None)?;
+                Ok(id)
+            })
+            .unwrap();
+        s.execute("selection.set", &json!({"ids": [frame.0]})).unwrap();
+        let clip = super::super::file::base64_encode(b"\x00\x00\x00\x18ftypmp42");
+        let r = s.execute("file.place", &json!({"base64": clip, "name": "clip.mp4"})).unwrap();
+        assert_eq!(r["id"].as_u64(), Some(frame.0), "the selected frame takes the video");
+        let d = &s.doc().unwrap().doc;
+        let it = d.item(frame).unwrap();
+        let Content::Graphic(g) = &it.content else { panic!("the frame holds the video: {:?}", it.content) };
+        assert_eq!(d.assets[&g.asset].name, "clip.mp4");
+        assert!(it.media.is_some());
+        assert_eq!(d.spreads[0].items.len(), 1, "no new object");
     }
 
     #[test]
